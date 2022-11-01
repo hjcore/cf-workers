@@ -1,4 +1,4 @@
 main = "./src/index.ts"
 name = "cf-workers"
-compatibility_date = "2022-11-30"
+compatibility_date = "2022-11-01"
 node_compat = true
