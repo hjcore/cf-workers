@@ -1,50 +1,39 @@
-import { Router } from "@tsndr/cloudflare-worker-router";
-import { toHex } from "@cosmjs/encoding";
+import { Router } from "itty-router";
+import { error, json, withContent } from "itty-router-extras";
+import { createCors } from "itty-cors";
+import pkg from "../package.json";
 
-import { name, version } from "../package.json";
-import * as secp from "@noble/secp256k1";
-import * as jose from "jose";
-
-const router = new Router();
-
-router.cors();
-
-router.get("/version", (handle) => {
-  handle.res.body = { name, version, env: handle.env };
+const { preflight, corsify } = createCors({
+  methods: ["GET", "POST", "DELETE"],
+  origins: ["*"],
+  maxAge: 86400,
+  headers: {},
 });
 
-router.get("/test", (handle) => {
-  console.log(handle);
-  handle.res.body = { env: handle.env };
+const router = Router();
+
+router.all("*", preflight);
+
+router.get("/version", () => json({ name: pkg.name, version: pkg.version }));
+
+router.get("/", async (req) => {
+  const ip = (req as any).headers.get("CF-Connecting-IP");
+  return new Response(ip);
 });
 
-router.get("/", async (handle) => {
-  const payload = {
-    name: "JWT",
-    iss: "cf-workers",
-  };
-
-  const algorithm = "ES256";
-  const keyPair = await jose.generateKeyPair(algorithm);
-  const ecPrivateKey = keyPair.privateKey;
-  const token = await new jose.SignJWT(payload)
-    .setProtectedHeader({ alg: algorithm })
-    .setExpirationTime("120s")
-    .sign(ecPrivateKey);
-
-  const secpKey = toHex(secp.utils.randomPrivateKey());
-
-  handle.res.body = { token, secpKey };
+router.get("/json", async (req) => {
+  const ip = (req as any).headers.get("CF-Connecting-IP");
+  return json({ ip });
 });
 
-router.post("/", async (handle) => {
-  const body = handle.req.body;
-
-  handle.res.body = { body };
+router.post("/", withContent, async (req, env) => {
+  return json({ env });
 });
 
 export default {
-  async fetch(request: Request, env: unknown): Promise<Response> {
-    return router.handle(env, request);
-  },
+  fetch: (...args) =>
+    router
+      .handle(...args)
+      .catch((err) => error(500, err.stack))
+      .then(corsify),
 };
